@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { VolumeIcon, PauseIcon, PlayIcon, HeadphonesIcon, Settings2Icon } from "lucide-react";
+import { VolumeIcon, PauseIcon, PlayIcon, HeadphonesIcon, Settings2Icon, XCircleIcon } from "lucide-react";
 
 export default function ReadArticleButton({ content }: { content: string }) {
   const [isReading, setIsReading] = useState(false);
@@ -299,7 +299,7 @@ export default function ReadArticleButton({ content }: { content: string }) {
       // Update the previous voice index
       prevVoiceIndexRef.current = selectedVoiceIndex;
     }
-  }, [selectedVoiceIndex, availableVoices, isReading, utterance, currentReadingPosition]);
+  }, [selectedVoiceIndex, availableVoices, isReading, utterance, isPaused, currentReadingPosition]);
 
   // Update rate when reading speed changes
   useEffect(() => {
@@ -336,7 +336,7 @@ export default function ReadArticleButton({ content }: { content: string }) {
     
     // Update the previous speed
     prevSpeedRef.current = readingSpeed;
-  }, [readingSpeed, utterance, isReading, currentReadingPosition]);
+  }, [readingSpeed, utterance, isReading, isPaused, currentReadingPosition]);
 
   const toggleReading = () => {
     if (typeof window === 'undefined') return;
@@ -430,8 +430,30 @@ export default function ReadArticleButton({ content }: { content: string }) {
     }
   };
 
+  // Floating stop button that appears when reading
+  const FloatingStopButton = () => {
+    if (!isReading) return null;
+    
+    return (
+      <div className="fixed bottom-6 right-6 z-50">
+        <button
+          onClick={stopReading}
+          className="bg-red-500 hover:bg-red-600 text-white p-3 rounded-full shadow-lg flex items-center justify-center transition-all duration-300"
+          aria-label="Stop Reading"
+          title="Stop Reading"
+        >
+          <XCircleIcon size={24} />
+        </button>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex flex-col gap-4 w-full">
+    <>
+      {/* Floating stop button */}
+      <FloatingStopButton />
+      
+      <div className="flex flex-col gap-4 w-full">
       <div className="flex justify-between items-center mb-2">
         <div className="flex items-center gap-2">
           <HeadphonesIcon size={20} className="text-purple-500" />
@@ -573,5 +595,6 @@ export default function ReadArticleButton({ content }: { content: string }) {
     
     
     </div>
+    </>
   );
 }
