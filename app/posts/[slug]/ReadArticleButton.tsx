@@ -18,14 +18,28 @@ export default function ReadArticleButton({ content }: { content: string }) {
   const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(0.2);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [hasThaiVoice, setHasThaiVoice] = useState(false);
+  const [currentWordPosition, setCurrentWordPosition] = useState<{charIndex: number, charLength: number} | null>(null);
+  const [enableAutoScroll, setEnableAutoScroll] = useState(true);
   const backgroundMusicRef = useRef<HTMLAudioElement | null>(null);
+  const articleRef = useRef<HTMLElement | null>(null);
 
   // Clean HTML content to get plain text
   const getPlainText = (html: string) => {
-    const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = html;
-    return tempDiv.textContent || tempDiv.innerText || '';
+    if (typeof window === 'undefined') return "";
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return div.textContent || div.innerText || "";
   };
+  
+  // Find the article element in the DOM
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const article = document.querySelector('article');
+      if (article) {
+        articleRef.current = article as HTMLElement;
+      }
+    }
+  }, []);
 
   // Initialize background music
   useEffect(() => {
@@ -148,8 +162,12 @@ export default function ReadArticleButton({ content }: { content: string }) {
           const wordLength = event.charLength || 5;
           const currentWord = plainText.substring(currentPosition, currentPosition + wordLength);
           
-          // Store current position for voice/rate changes
+          // Store current position for voice/rate changes and highlighting
           u.currentPosition = currentPosition;
+          setCurrentWordPosition({
+            charIndex: currentPosition,
+            charLength: wordLength
+          });
           
           // Get some context around the current word for highlighting
           const startContext = Math.max(0, currentPosition - 20);
@@ -157,6 +175,68 @@ export default function ReadArticleButton({ content }: { content: string }) {
           const textContext = plainText.substring(startContext, endContext);
           
           setHighlightedText(textContext);
+          
+          // Auto-scroll to the current word if enabled
+          if (enableAutoScroll && articleRef.current) {
+            highlightAndScrollToText(currentWord, plainText, currentPosition);
+          }
+        }
+      };
+      
+      // Function to find and highlight text in the article
+      const highlightAndScrollToText = (word: string, fullText: string, position: number) => {
+        if (!articleRef.current) return;
+        
+        // Get all text nodes in the article
+        const textNodes: Node[] = [];
+        const walker = document.createTreeWalker(
+          articleRef.current,
+          NodeFilter.SHOW_TEXT,
+          null
+        );
+        
+        let node;
+        while (node = walker.nextNode()) {
+          textNodes.push(node);
+        }
+        
+        // Try to find the node containing our text
+        let targetNode: Node | null = null;
+        let targetOffset = 0;
+        let cumulativeLength = 0;
+        
+        // Calculate approximate position in the DOM
+        const relativePosition = position / fullText.length;
+        const approximateNodeIndex = Math.floor(relativePosition * textNodes.length);
+        
+        // Start searching from the approximate position
+        const startIndex = Math.max(0, approximateNodeIndex - 5);
+        const endIndex = Math.min(textNodes.length, approximateNodeIndex + 15);
+        
+        for (let i = startIndex; i < endIndex; i++) {
+          const nodeText = textNodes[i].textContent || "";
+          if (nodeText.includes(word)) {
+            targetNode = textNodes[i];
+            targetOffset = nodeText.indexOf(word);
+            break;
+          }
+        }
+        
+        if (targetNode && targetNode.parentElement) {
+          // Create a range to select the text
+          const range = document.createRange();
+          range.setStart(targetNode, targetOffset);
+          range.setEnd(targetNode, targetOffset + word.length);
+          
+          // Clear any existing selection
+          window.getSelection()?.removeAllRanges();
+          window.getSelection()?.addRange(range);
+          
+          // Scroll the element into view with smooth behavior
+          targetNode.parentElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+          });
         }
       };
       
@@ -362,6 +442,15 @@ export default function ReadArticleButton({ content }: { content: string }) {
               className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
           </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">Auto-scroll</label>
+            <input 
+              type="checkbox" 
+              checked={enableAutoScroll}
+              onChange={() => setEnableAutoScroll(!enableAutoScroll)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+          </div>
         </div>
       </div>
       
@@ -373,14 +462,14 @@ export default function ReadArticleButton({ content }: { content: string }) {
       
       {!hasThaiVoice && (
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-md mb-3">
-          <p className="text-sm text-blue-700">
+          <div className="text-sm text-blue-700">
             No Thai voices detected in your browser. To add Thai voices:
             <ul className="list-disc pl-5 mt-1">
               <li>In Windows: Settings → Time & Language → Language → Add Thai language</li>
               <li>In macOS: System Preferences → Accessibility → Spoken Content → Add Thai voice</li>
               <li>In Chrome: chrome://settings/languages → Add Thai language</li>
             </ul>
-          </p>
+          </div>
         </div>
       )}
       
@@ -474,21 +563,9 @@ export default function ReadArticleButton({ content }: { content: string }) {
             </Button>
           )}
         </div>
-      </div>
-      
-      {showTextCapture && (
-        <div className="mt-2 p-4 bg-blue-50 border border-blue-100 rounded-md shadow-sm max-h-32 overflow-y-auto">
-          <p className="text-lg leading-relaxed">
-            {highlightedText ? (
-              <span className="font-medium text-blue-800 bg-blue-100 px-1 rounded">
-                {highlightedText}
-              </span>
-            ) : (
-              <span className="text-gray-500 italic">Reading article...</span>
-            )}
-          </p>
-        </div>
-      )}
+      </div>     
+    
+    
     </div>
   );
 }
