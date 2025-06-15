@@ -15,6 +15,7 @@ import Link from "next/link";
 import Balancer from "react-wrap-balancer";
 
 import type { Metadata } from "next";
+import ReadArticleButton from "./ReadArticleButton";
 
 export async function generateStaticParams() {
   const posts = await getAllPosts();
@@ -67,6 +68,8 @@ export async function generateMetadata({
     },
   };
 }
+
+
 
 export default async function Page({
   params,
@@ -129,6 +132,10 @@ export default async function Page({
           )}
         </Prose>
 
+        <div className="flex items-center justify-center my-6 py-4 px-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-blue-100 shadow-sm">
+          <ReadArticleButton content={post.content.rendered} />
+        </div>
+        
         <Article dangerouslySetInnerHTML={{ __html: post.content.rendered }} />
       </Container>
     </Section>
