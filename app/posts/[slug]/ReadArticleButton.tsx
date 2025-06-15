@@ -19,6 +19,7 @@ export default function ReadArticleButton({ content }: { content: string }) {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [hasThaiVoice, setHasThaiVoice] = useState(false);
   const [currentWordPosition, setCurrentWordPosition] = useState<{charIndex: number, charLength: number} | null>(null);
+  const [currentReadingPosition, setCurrentReadingPosition] = useState<number>(0);
   const [enableAutoScroll, setEnableAutoScroll] = useState(true);
   const backgroundMusicRef = useRef<HTMLAudioElement | null>(null);
   const articleRef = useRef<HTMLElement | null>(null);
@@ -163,7 +164,7 @@ export default function ReadArticleButton({ content }: { content: string }) {
           const currentWord = plainText.substring(currentPosition, currentPosition + wordLength);
           
           // Store current position for voice/rate changes and highlighting
-          u.currentPosition = currentPosition;
+          setCurrentReadingPosition(currentPosition);
           setCurrentWordPosition({
             charIndex: currentPosition,
             charLength: wordLength
@@ -255,158 +256,163 @@ export default function ReadArticleButton({ content }: { content: string }) {
       };
     }
   }, [content]);
-
+  
+  // Refs for tracking previous values to prevent infinite loops
+  const prevVoiceIndexRef = useRef(selectedVoiceIndex);
+  const prevSpeedRef = useRef(readingSpeed);
+  
   // Update voice when selection changes
   useEffect(() => {
-    if (!utterance || availableVoices.length === 0) return;
+    if (!utterance || !availableVoices.length || !isReading) return;
     
-    // If we're currently reading, we need to maintain the current position
-    if (isReading) {
+    // Only update if the voice selection actually changed
+    if (prevVoiceIndexRef.current === selectedVoiceIndex) return;
+    
+    const selectedVoice = availableVoices[selectedVoiceIndex];
+    if (selectedVoice) {
+      // Create a new utterance with the same text but different voice
       const synth = window.speechSynthesis;
-      const currentPosition = utterance.currentPosition || 0;
+      const text = utterance.text;
       
-      // Create a new utterance with the selected voice
-      const plainText = getPlainText(content);
-      const newUtterance = new SpeechSynthesisUtterance(plainText);
-      newUtterance.voice = availableVoices[selectedVoiceIndex];
-      newUtterance.rate = readingSpeed;
-      newUtterance.pitch = utterance.pitch;
-      newUtterance.volume = utterance.volume;
-      
-      // Copy all event handlers
-      newUtterance.onstart = utterance.onstart;
-      newUtterance.onpause = utterance.onpause;
-      newUtterance.onresume = utterance.onresume;
-      newUtterance.onend = utterance.onend;
-      newUtterance.onboundary = utterance.onboundary;
-      
-      // Cancel current speech and start from current position
+      // Cancel current speech
       synth.cancel();
       
-      // Set the text to the remaining portion
-      if (currentPosition > 0) {
-        newUtterance.text = plainText.substring(currentPosition);
+      // Create new utterance starting from current position
+      const newUtterance = new SpeechSynthesisUtterance(
+        text.substring(currentReadingPosition)
+      );
+      
+      // Copy properties
+      newUtterance.voice = selectedVoice;
+      newUtterance.rate = utterance.rate;
+      newUtterance.onboundary = utterance.onboundary;
+      newUtterance.onend = utterance.onend;
+      
+      // Update current utterance
+      setUtterance(newUtterance);
+      
+      // Speak with new voice
+      if (!isPaused) {
+        synth.speak(newUtterance);
       }
       
-      // Update the utterance and speak
-      setUtterance(newUtterance);
-      synth.speak(newUtterance);
-    } else {
-      // If not reading, just update the voice
-      utterance.voice = availableVoices[selectedVoiceIndex];
+      // Update the previous voice index
+      prevVoiceIndexRef.current = selectedVoiceIndex;
     }
-  }, [selectedVoiceIndex, availableVoices, isReading, content]);
-  
+  }, [selectedVoiceIndex, availableVoices, isReading, utterance, currentReadingPosition]);
+
   // Update rate when reading speed changes
   useEffect(() => {
-    if (!utterance) return;
+    if (!utterance || !isReading) return;
     
-    if (isReading) {
-      // Store current position before changing rate
-      const currentPosition = utterance.currentPosition || 0;
-      const synth = window.speechSynthesis;
-      
-      // Create a new utterance with updated rate
-      const plainText = getPlainText(content);
-      const newUtterance = new SpeechSynthesisUtterance(plainText);
-      newUtterance.voice = utterance.voice;
-      newUtterance.rate = readingSpeed;
-      newUtterance.pitch = utterance.pitch;
-      newUtterance.volume = utterance.volume;
-      
-      // Copy all event handlers
-      newUtterance.onstart = utterance.onstart;
-      newUtterance.onpause = utterance.onpause;
-      newUtterance.onresume = utterance.onresume;
-      newUtterance.onend = utterance.onend;
-      newUtterance.onboundary = utterance.onboundary;
-      
-      // Cancel current speech and start from current position
-      synth.cancel();
-      
-      // Set the text to the remaining portion
-      if (currentPosition > 0) {
-        newUtterance.text = plainText.substring(currentPosition);
-      }
-      
-      // Update the utterance and speak
-      setUtterance(newUtterance);
+    // Only update if the speed actually changed
+    if (prevSpeedRef.current === readingSpeed) return;
+    
+    // Create a new utterance with updated rate
+    const synth = window.speechSynthesis;
+    const text = utterance.text;
+    
+    // Cancel current speech
+    synth.cancel();
+    
+    // Create new utterance starting from current position
+    const newUtterance = new SpeechSynthesisUtterance(
+      text.substring(currentReadingPosition)
+    );
+    
+    // Copy properties but update rate
+    newUtterance.voice = utterance.voice;
+    newUtterance.rate = readingSpeed;
+    newUtterance.onboundary = utterance.onboundary;
+    newUtterance.onend = utterance.onend;
+    
+    // Update current utterance
+    setUtterance(newUtterance);
+    
+    // Speak with new rate
+    if (!isPaused) {
       synth.speak(newUtterance);
-    } else {
-      // If not reading, just update the rate
-      utterance.rate = readingSpeed;
     }
-  }, [readingSpeed, isReading, content]);
+    
+    // Update the previous speed
+    prevSpeedRef.current = readingSpeed;
+  }, [readingSpeed, utterance, isReading, currentReadingPosition]);
 
   const toggleReading = () => {
-    if (typeof window === 'undefined' || !utterance) return;
-    
-    // Clear any previous error messages
-    setErrorMessage("");
+    if (typeof window === 'undefined') return;
     
     const synth = window.speechSynthesis;
     
-    // Check if the selected voice is available and compatible
-    if (!isReading && availableVoices.length > 0) {
-      const selectedVoice = availableVoices[selectedVoiceIndex];
-      
-      // Check if the voice is working properly
-      try {
-        // Test if the voice can speak a simple phrase
-        const testUtterance = new SpeechSynthesisUtterance("Test");
-        testUtterance.voice = selectedVoice;
-        
-        // If the user wants Thai but we don't have Thai voice
-        if (selectedVoice.lang !== 'th-TH' && !selectedVoice.name.includes('Thai') && 
-            !hasThaiVoice && content.match(/[\u0E00-\u0E7F]/)) {
-          setErrorMessage("Warning: Thai text detected but no Thai voice is available. Text may not be pronounced correctly.");
-        }
-      } catch (error) {
-        console.error('Voice compatibility error:', error);
-        setErrorMessage("Error: The selected voice is not compatible with your browser.");
-        return;
-      }
-    }
-
     if (isReading) {
+      // Pause/Resume reading
       if (isPaused) {
         synth.resume();
-        setIsPaused(false);
         
         // Resume background music if enabled
         if (enableBackgroundMusic && backgroundMusicRef.current) {
-          backgroundMusicRef.current.play().catch(error => {
-            console.error('Failed to play background music:', error);
-            setEnableBackgroundMusic(false);
-          });
+          backgroundMusicRef.current.play().catch(console.error);
         }
       } else {
         synth.pause();
-        setIsPaused(true);
         
         // Pause background music if enabled
         if (enableBackgroundMusic && backgroundMusicRef.current) {
           backgroundMusicRef.current.pause();
         }
       }
+      setIsPaused(!isPaused);
     } else {
-      synth.cancel(); // Cancel any previous speech
-      synth.speak(utterance);
+      // Start new reading
+      const plainText = getPlainText(content);
+      const u = new SpeechSynthesisUtterance(plainText);
+      
+      // Set voice if available
+      if (availableVoices.length > 0) {
+        const selectedVoice = availableVoices[selectedVoiceIndex];
+        u.voice = selectedVoice;
+        
+        // Check if content is Thai but voice is not Thai
+        const contentHasThai = /[\u0E00-\u0E7F]/.test(plainText);
+        const voiceIsThai = selectedVoice.lang === 'th-TH' || 
+                          selectedVoice.name.includes('Thai') ||
+                          selectedVoice.name.includes('ไทย') ||
+                          selectedVoice.name.includes('Niwat') ||
+                          selectedVoice.name.includes('Narisa');
+        
+        if (contentHasThai && !voiceIsThai && hasThaiVoice) {
+          setErrorMessage("Warning: Thai text detected but non-Thai voice selected. Consider switching to a Thai voice for better pronunciation.");
+        } else if (contentHasThai && !hasThaiVoice) {
+          setErrorMessage("Warning: Thai text detected but no Thai voices available. Install Thai voices for better pronunciation.");
+        } else {
+          setErrorMessage("");
+        }
+      }
+      
+      // Set rate (speed)
+      u.rate = readingSpeed;
+      
+      // Copy event handlers from the previous utterance
+      if (utterance) {
+        u.onboundary = utterance.onboundary;
+        u.onend = utterance.onend;
+      }
+      
+      setUtterance(u);
+      synth.cancel(); // Cancel any ongoing speech
+      synth.speak(u);
       setIsReading(true);
       setIsPaused(false);
       setShowTextCapture(true);
       
-      // Start background music if enabled
+      // Play background music if enabled
       if (enableBackgroundMusic && backgroundMusicRef.current) {
-        backgroundMusicRef.current.currentTime = 0; // Start from beginning
-        backgroundMusicRef.current.play().catch(error => {
-          console.error('Failed to play background music:', error);
-          setEnableBackgroundMusic(false);
-        });
+        backgroundMusicRef.current.currentTime = 0;
+        backgroundMusicRef.current.play().catch(console.error);
       }
     }
   };
 
+// ... (rest of the code remains the same)
   const stopReading = () => {
     if (typeof window === 'undefined') return;
     
